@@ -1,59 +1,59 @@
 module DSLAcciones where
 
-import Fisicas 
-import Entidades
-import Logica
+import Fisicas (addVV,subVec)
+import Entidades (Accion, posicion)
+import Data.Fixed (mod')
+import Acciones
 
-data BotAction =
-    SetVelocidad Vector  -- Fijar velocidad
-    |AddVelocidad Vector -- Suma velocidad
-    |Stop                -- Para
-    |Disparar            -- Dispara una bala en el ángulo del cañón
-    |GirarCannon Angle   -- Gira el cañón
-    |Nada                -- No hace nada
-    deriving (Show,Eq)
+-- Definición de bots
 
-{-- Función que aplica una acción a un tanque
-apliAccion :: Tanque -> BotAction -> Tanque
-apliAccion t accion =
-    case accion of
-        SetVelocidad v -> updateVelocity "SetVelocidad" v t
-        AddVelocidad v -> updateVelocity "AddVelocidad" v t
-        Stop           -> updateVelocity "Stop" (0,0) t 
-        GirarCannon a  -> t {extra = (extra t) {anguloCannon = a}}
-        Disparar       -> t
-        Nada           -> t-}
+-- Bot que sigue al primer enemigo que vea
+botSimple :: Accion ()
+botSimple = do
+    enems <- enemigos
+    case enems of
+        (enemigo:_) -> do
+            girarHacia (posicion enemigo)
+            acelerar
 
-apliAccion :: Tanque -> BotAction -> Tanque
-apliAccion t accion =
-    case accion of
-        SetVelocidad v -> updateVelocity "SetVelocidad" v t
-        AddVelocidad v -> updateVelocity "AddVelocidad" v t
-        Stop           -> updateVelocity "Stop" (0,0) t 
-        GirarCannon a  -> fmap (\info -> info { anguloCannon = a }) t
-        Disparar       -> t
-        Nada           -> t
+            preparado <- apuntarCanyonHacia (posicion enemigo)
+            if preparado then disparar else nada
+        _ -> parar
+    evitarParedes
 
+-- Bot que da vueltas sobre si mismo
+botVueltas :: Accion ()
+botVueltas = do
+    yo <- miTanque
+    t <- tiempo
+    let angulo = t `mod'` (2 * pi)
 
--- Función que genera una bala con una velocidad fija
-fireBullet:: Tanque -> Bala
-fireBullet t =
-    let a = anguloCannon (extra t)
-        p = posicion t
-        v = ((cos a) * 10,(sin a) * 10)
-        info = InfoBala {danyo = 10}
-        in Objeto {posicion = p, velocidad = v, tamanyo = (5,10), extra = info} -- Bala en dirección del ángulo del cañon con una velocidad de 10 (Se podría modifica)
+    mantenerVelocidad 50
+    girarHacia (addVV (posicion yo) (cos angulo, sin angulo))
 
--- Ejemplo de bot --
--- Bot simple que se mueve hasta detectar a otro tanque, entonces se para, gira su cañon y dispara
--- Para que tuvieras posibilidades de ganar debería tener un gran rango de rada
--- Si no detecta ningún enemigo avanza hacia arriba a la derecha, debería spawnear cerca de la esquina inferior izquierda
-botSimple :: Mundo -> Tanque -> [BotAction]
-botSimple mundo bot =
-    case [enemigo|enemigo<-tanques mundo, enemigo /= bot, detectedAgent bot enemigo] of
-        (enemigo:_) ->
-            [Stop,
-            GirarCannon (angleToTarget (posicion bot) (posicion enemigo)),
-            Disparar
-            ]
-        [] -> [SetVelocidad (1,1)]
+-- Bot que se queda quieto y dispara con precisión. Necesitaría un mayor radar
+botFrancotirador :: Accion ()
+botFrancotirador = do
+    enems <- enemigos
+    case enems of
+        (enemigo:_) -> do
+            preparado <- apuntarCanyonHacia (posicion enemigo)
+            if preparado then disparar else nada
+        _ -> nada
+
+-- Bot al detectar un enemigo se aleja de él mientras dispara
+botEvasivo :: Accion ()
+botEvasivo = do
+    yo <- miTanque
+    enems <- enemigos
+    case enems of
+        (enemigo:_) -> do
+            let posE = posicion enemigo
+                posY = posicion yo
+                dirEscape = addVV posY (subVec posY posE)
+            girarHacia dirEscape
+            mantenerVelocidad 80
+            preparado <- apuntarCanyonHacia posE
+            if preparado then disparar else nada
+        _ -> parar
+    evitarParedes

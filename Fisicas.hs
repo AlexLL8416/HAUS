@@ -1,5 +1,7 @@
 module Fisicas where
 
+import Data.Fixed (mod')
+
 type Point = (Float, Float) 
 type Vector = (Float, Float)
 type Angle = Float
@@ -56,10 +58,37 @@ isInBounds (x1, y1) (x2, y2) = x1 >= 0 && x1 <= x2 && y1 >= 0 && y1 <= y2
 mul :: (Float,Float) -> (Float,Float) -> (Float,Float)
 mul (w,h) (sw,sh) = (w*sw, h*sh)
 
+mulVS :: Float -> Vector -> Vector
+mulVS k (x, y) = (x * k, y * k)
+
+addVV :: Vector -> Vector -> Vector
+addVV (x1, y1) (x2, y2) = (x1 + x2, y1 + y2) 
+
+modV :: Vector -> Float
+modV (x, y) = sqrt ((x ^ 2) + (y ^ 2))
+
 normalizar :: Vector -> Vector
 normalizar (x, y) = (x / m, y / m)
-    where m = sqrt ((x ^ 2) + (y ^ 2))
+    where m = modV (x, y)
+
+rectangulo :: (Float,Float) -> Rect
+rectangulo (w,h) = ((-w/2, -h/2), (w/2, -h/2), (w/2, h/2), (-w/2, h/2))
 
 -- Añade el vector a todos los puntos del rectángulo
 trasladoRect :: Rect -> Vector -> Rect
 trasladoRect ((ax, ay), (bx, by), (cx, cy), (dx, dy)) (x, y) = ((ax + x, ay + y), (bx + x, by + y), (cx + x, cy + y), (dx + x, dy + y))
+
+-- Normaliza un ángulo a (-pi, pi]
+normalizarAngulo :: Float -> Float
+normalizarAngulo x = mod' (x + pi) (2 * pi) - pi
+
+-- Devuelve un ángulo resultado de acercar el ángulo 'a' al ángulo 'b' teniendo en cuenta una cantidad máxima de cambio
+acercarAngulo :: Float -> Float -> Float -> Float
+acercarAngulo k a b =
+    let diff = normalizarAngulo (b - a)
+        anclado = max (-k) (min diff k)
+    in normalizarAngulo (a + anclado)
+
+-- Devuelve un vector que apunta al ángulo dado en radianes
+anguloV :: Float -> Vector
+anguloV a = (cos a, sin a)

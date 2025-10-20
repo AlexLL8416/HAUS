@@ -6,6 +6,8 @@
 
 -- MÓDULOS IMPORTADOS (SU USO SE EXPLICA ABAJO)
 
+module Memoria where
+
 import qualified Data.Map as M
 import Data.Typeable (Typeable, cast)
 
@@ -32,22 +34,52 @@ import Data.Typeable (Typeable, cast)
 -- distinto para cada tipo de dato que vayamos a admitir en el tipo encapsulado. Declaremos este tipo como FlexibleR:
 
 data FlexibleR =
-    VInt Integer | VFloat Float | VStr String | VFloatP (Float, Float) | VBool Bool
+    VInt Int | VFloat Float | VStr String | VFloatP (Float, Float) | VBool Bool
 
-
--- Para cada uno de los tipos admitidos tendríamos el correspondiente constructor de manera que luego podríamos gestionar
--- la extracción de esos valores con el uso de case ... of o similar. 
-
-flexibleR2Int :: FlexibleR -> Integer
-flexibleR2Int x =
-  case x of
-    VInt i -> i 
-    _ -> error "El objeto enmascarado no es un Integer" 
+instance Show FlexibleR where
+  show (VInt n) = show n
+  show (VFloat f) = show f
+  show (VStr s) = show s
+  show (VFloatP p) = show p
+  show (VBool b) = show b
 
 -- Con esto, sí podríamos definir la memoria como un Map con datos flexibles, pero sin perder 
 -- el fuerte tipado inherente a haskell.
 
 type MemoriaFR = M.Map String FlexibleR 
 
--- Podemos almacenar distintos tipos de valores pero todos ellos enmascarados bajo el tipo FlexibleR. 
+memoriaVacia :: MemoriaFR
+memoriaVacia = M.empty
 
+memoriaInsert :: String -> FlexibleR -> MemoriaFR -> MemoriaFR
+memoriaInsert = M.insert
+
+-- Para cada uno de los tipos admitidos tendríamos el correspondiente constructor de manera que luego podríamos gestionar
+-- la extracción de esos valores con el uso de case ... of o similar. 
+
+memoriaGetInt :: String -> MemoriaFR -> Maybe Int
+memoriaGetInt k m = case M.lookup k m of
+    Just (VInt n)  -> Just n
+    _ -> Nothing
+
+memoriaGetFloat :: String -> MemoriaFR -> Maybe Float
+memoriaGetFloat k m = case M.lookup k m of
+    Just (VFloat f) -> Just f
+    _ -> Nothing
+
+memoriaGetString :: String -> MemoriaFR -> Maybe String
+memoriaGetString k m = case M.lookup k m of
+    Just (VStr s) -> Just s
+    _ -> Nothing
+
+memoriaGetFloatP :: String -> MemoriaFR -> Maybe (Float, Float)
+memoriaGetFloatP k m = case M.lookup k m of
+    Just (VFloatP p) -> Just p
+    _ -> Nothing
+
+memoriaGetBool :: String -> MemoriaFR -> Maybe Bool
+memoriaGetBool k m = case M.lookup k m of
+    Just (VBool b) -> Just b
+    _ -> Nothing
+
+-- Podemos almacenar distintos tipos de valores pero todos ellos enmascarados bajo el tipo FlexibleR. 
