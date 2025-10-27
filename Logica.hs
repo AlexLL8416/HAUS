@@ -12,53 +12,47 @@ import Fisicas
 import Constantes
 import Colisiones
 
+-- Detección y estado de los robots --
 
-
--- detectedAgent: Determinar si un agente ha detectado a otro en caso de encontrarse dentro del rango de su radar
 detectedAgent :: Tanque -> Tanque -> Bool
-detectedAgent (Objeto {posicion = pos_a, extra = a}) (Objeto {posicion = pos_b}) = distanceBetween pos_a pos_b <= radar a
+detectedAgent (Objeto {posicion = pos_a, extra = a}) (Objeto {posicion = pos_b}) =
+    distanceBetween pos_a pos_b <= radar a
 
--- isRobotAlive: True si la energía del robot es mayor a 0
 isRobotAlive :: Tanque -> Bool
 isRobotAlive Objeto {extra = a} = energia a > 0
 
--- countActiveRobots: Contar los robots que están vivos
 countActiveRobots :: [Tanque] -> Int
 countActiveRobots tanques = length [t | t <- tanques, isRobotAlive t]
 
--- updatePosition: Actualizar una posición en función de la velocidad y el incremento de tiempo
-updatePosition :: Float -> Objeto a -> Objeto a
-updatePosition dt t = t {posicion = (px + (vx * dt), py + (vy * dt))}
-    where
-        (px, py) = posicion t
-        (vx, vy) = velocidad t
+-- Actualización de física y movimiento --
 
--- Aplica movimiento angular al tanque para acercarse al ángulo objetivo
+updatePosition :: Float -> Objeto a -> Objeto a
+updatePosition dt t = t { posicion = (px + (vx * dt), py + (vy * dt)) }
+  where
+    (px, py) = posicion t
+    (vx, vy) = velocidad t
+
 updateTanqueAngulo :: Float -> Tanque -> Tanque
 updateTanqueAngulo dt = fmap (\x -> x { angulo = acercarAngulo (dt * velGiroTanque) (angulo x) (quiereAngulo x) })
 
--- Aplica movimiento angular al cañón para acercarse al ángulo objetivo
 updateTanqueAnguloCannon :: Float -> Tanque -> Tanque
 updateTanqueAnguloCannon dt = fmap (\x -> x { anguloCannon = acercarAngulo (dt * velGiroCannon) (anguloCannon x) (quiereAnguloCannon x) })
 
--- Aplica la aceleración y el frenado al tanque según la dirección a la que está mirando
 updateTanqueVelocity :: Float -> Tanque -> Tanque
-updateTanqueVelocity dt t = let
-    info = extra t
-    dir = (cos (angulo info), sin (angulo info))  -- Calculamos el vector al que el tanque está mirando
-    magVelAct = modV (velocidad t)                -- Calculamos la magnitud de la velocidad actual del tanque
-    deltaVel
-      | acelerando info = magnitudAceleracion       -- Si el tanque está acelerando, le añadimos la constante de aceleración a la velocidad
-      | frenando info = magVelAct * factorFrenado   -- Si el tanque está frenando, multiplicamos la velocidad actual por un factor constante
-      | otherwise = 0
-    magVel = min (magVelAct + (deltaVel * dt)) maxTanqueVelocity  -- Calculamos la magnitud del nuevo vector velocidad, teniendo en cuenta la aceleración que pide el tanque y la velocidad máxima permitida
-    adjVel = mulVS magVel dir                                     -- Calculamos el nuevo vector velocidad dirigiendolo en la dirección a la que mira el tanque
-    in t { velocidad = adjVel }
+updateTanqueVelocity dt t =
+  let info = extra t
+      dir = (cos (angulo info), sin (angulo info))
+      magVelAct = modV (velocidad t)
+      deltaVel
+        | acelerando info = magnitudAceleracion
+        | frenando info   = magVelAct * factorFrenado
+        | otherwise       = 0
+      magVel = min (magVelAct + (deltaVel * dt)) maxTanqueVelocity
+      adjVel = mulVS magVel dir
+  in t { velocidad = adjVel }
 
--- Actualia la física de un tanque
 updateTanque :: Float -> Tanque -> Tanque
 updateTanque dt t
-  -- Si el tanque no tiene energía, no se mueve
   | energia (extra t) <= 0 = t
   | otherwise = foldl (\ac f -> f dt ac) t
         [ updateTanqueAngulo
@@ -67,69 +61,114 @@ updateTanque dt t
         , updatePosition
         ]
 
--- Ejecuta la mónada Accion sobre un mundo de parte de un tanque, y devuelve el mundo mutado
+-- Limitar posición dentro del campo --
+
+limitarPosicion :: Size -> Tanque -> Tanque
+limitarPosicion (ancho, alto) t = t { posicion = (nx, ny), velocidad = (vx', vy') }
+  where
+    (x, y) = posicion t
+    (vx, vy) = velocidad t
+    halfX = ancho / 2
+    halfY = alto / 2
+    minX = -halfX
+    maxX =  halfX
+    minY = -halfY
+    maxY =  halfY
+    nx = clamp x minX maxX
+    ny = clamp y minY maxY
+    vx' | nx == minX || nx == maxX = 0 | otherwise = vx
+    vy' | ny == minY || ny == maxY = 0 | otherwise = vy
+
+clamp :: Float -> Float -> Float -> Float
+clamp v minV maxV = max minV (min v maxV)
+
+-- Ejecución de acciones --
+
 ejecutarAccion :: Int -> Mundo -> Accion () -> Mundo
 ejecutarAccion tidx m (Accion f) =
     let (_, m') = f tidx m
     in m'
 
--- Ejecuta las acciones de todos los tanques de un mundo
 ejecutarTanques :: Mundo -> Mundo
 ejecutarTanques m = ejecutarTanques' 0 (tanques m) m
 
 ejecutarTanques' :: Int -> [Tanque] -> Mundo -> Mundo
 ejecutarTanques' _ [] m = m
 ejecutarTanques' tidx (t:ts) m =
-    let m' = if isRobotAlive t then ejecutarAccion tidx m (cerebro (extra t)) else m
+    let m' = ejecutarAccion tidx m (cerebro (extra t))
     in ejecutarTanques' (tidx + 1) ts m'
+
+-- Actualización del mundo (colisiones, explosiones, etc.) --
 
 updateMundo :: Float -> Mundo -> Mundo
 updateMundo dt m =
     let
-        -- Mover tanques
+        -- 1. Mover tanques
         tsMovidos = map (updateTanque dt) (tanques m)
+        tsLimitados = map (limitarPosicion (tamanyoMundo m)) tsMovidos
+        mBase = m { tanques = tsLimitados }
 
-        -- Ejecutar acciones de los tanques
-        mConAcciones = ejecutarTanques m { tanques = tsMovidos }
-
+        -- 2. Ejecutar acciones de los tanques
+        mConAcciones = ejecutarTanques mBase
         tsAccionados = tanques mConAcciones
         bsExistentes = balas mConAcciones
         explsExistentes = explosiones mConAcciones
 
-        -- Mover balas
+        -- 3. Mover balas
         bsMovidas = map (updatePosition dt) bsExistentes
 
-        -- Detectar colisiones entre balas y tanques
-        colisionesTB = [(b, t) | b <- bsMovidas, t <- tsAccionados,
-                                 idObjeto t /= disparador (extra b),
-                                 checkCollision (rectTanque t) (rectBala b)]
+        -- 4. Colisiones bala-tanque
+        colisionesTB =
+          [ (b, t)
+          | b <- bsMovidas
+          , t <- tsAccionados
+          , idObjeto t /= disparador (extra b)
+          , checkCollision (rectTanque t) (rectBala b)
+          ]
 
-        -- Actualizar la energía de los tanques golpeados
-        tsActualizados = map (\t ->
+        tsDañados = map (\t ->
             let balasImpacto = [b | (b, t') <- colisionesTB, idObjeto t' == idObjeto t]
                 totalDanyo = sum (map (danyo . extra) balasImpacto)
-                infoNueva = (extra t) { energia = max 0 (energia (extra t) - totalDanyo) }
+                infoNueva  = (extra t) { energia = max 0 (energia (extra t) - totalDanyo) }
             in t { extra = infoNueva }
           ) tsAccionados
 
-        -- Eliminar balas que impactaron
-        bsFinales = filter (\b -> not $ any (\(b', _) -> idObjeto b' == idObjeto b) colisionesTB) bsMovidas
+        bsFinales = filter (\b -> not (any (\(b', _) -> idObjeto b' == idObjeto b) colisionesTB)) bsMovidas
+        explosionesImpacto = [ addExplosion (posicion b) 10 | (b, _) <- colisionesTB ]
 
-        -- Crear nuevas explosiones para cada bala que impactó
-        nuevasExplosiones = [ addExplosion (posicion b) 15 | (b, _) <- colisionesTB ]
+        -- 5. Colisiones entre tanques (daño leve)
+        colisionesTT =
+          [ (t1, t2)
+          | t1 <- tsDañados
+          , t2 <- tsDañados
+          , idObjeto t1 /= idObjeto t2
+          , checkCollision (rectTanque t1) (rectTanque t2)
+          ]
 
-        -- Actualizar explosiones existentes (reducir tiempo de vida)
+        tsTrasColision = map (\t ->
+            let hayImpacto = any (\(a,b) -> idObjeto a == idObjeto t || idObjeto b == idObjeto t) colisionesTT
+                danyoChoque = if hayImpacto then 1 else 0  -- solo 1 punto por choque leve
+                infoNueva = (extra t) { energia = max 0 (energia (extra t) - danyoChoque) }
+            in t { extra = infoNueva }
+          ) tsDañados
+
+        -- 6. Tanques destruidos y explosiones
+        tanquesMuertos = filter (\t -> energia (extra t) <= 0) tsTrasColision
+        explosionesMuerte = [ addExplosion (posicion t) 30 | t <- tanquesMuertos ]
+        tsVivos = filter (\t -> energia (extra t) > 0) tsTrasColision
+
+        -- 7. Actualizar explosiones
         updateExplosion dt = fmap (\x -> x { tiempoVida = tiempoVida x - dt })
+        explsActualizadas =
+          filter (\e -> tiempoVida (extra e) > 0)
+            (map (updateExplosion dt) (explsExistentes ++ explosionesImpacto ++ explosionesMuerte))
 
-        explsActualizadas = filter (\e -> tiempoVida (extra e) > 0) $
-                            map (updateExplosion dt) (explsExistentes ++ nuevasExplosiones)
+        -- 8. Tiempo del juego
+        tiempoNuevo = tiempoJuego m + dt
 
-        -- Actualizar el tiempo de juego
-        tiempo = tiempoJuego m + dt
-
-    in mConAcciones {
-           tanques = tsActualizados
+    in mConAcciones
+         { tanques = map (limitarPosicion (tamanyoMundo m)) tsVivos
          , balas = bsFinales
          , explosiones = explsActualizadas
-         , tiempoJuego = tiempo
+         , tiempoJuego = tiempoNuevo
          }

@@ -1,10 +1,13 @@
 module Main where
 
--- Importamos la librería Gloss en modo "Pure Game" (no IO)
+-- Main.hs: configura y ejecuta el juego 
+
 import Graphics.Gloss
 import Graphics.Gloss.Interface.Pure.Game
+import Graphics.Gloss.Juicy (loadJuicyPNG)
+import System.Random
 
--- Importamos los módulos del proyecto
+-- Importamos tus módulos
 import Entidades       
 import Logica          
 import Colisiones      
@@ -14,71 +17,96 @@ import Fisicas
 import Memoria         
 import Utilidades      
 
-
--- CONFIGURACIÓN DE LA VENTANA --
+-- =====================================================
+-- CONFIGURACIÓN DE LA VENTANA
+-- =====================================================
 
 tamanyoCampo :: Num a => (a, a)
 tamanyoCampo = (700, 700)
 
--- Definimos la ventana de juego
 ventana :: Display
 ventana = InWindow "Torneo de Bots" tamanyoCampo (100, 100)
 
--- Color de fondo de la ventana
 colorFondo :: Color
 colorFondo = black
 
--- Frecuencia de actualización en FPS
 fps :: Int
 fps = 60
 
+-- =====================================================
+-- INICIALIZACIÓN DEL MUNDO
+-- =====================================================
 
--- INICIALIZACIÓN DEL MUNDO --
+inicializarMundo :: IO Mundo
+inicializarMundo = do
+    x1 <- randomRIO (-300, 300)
+    y1 <- randomRIO (-300, 300)
+    x2 <- randomRIO (-300, 300)
+    y2 <- randomRIO (-300, 300)
+    x3 <- randomRIO (-300, 300)
+    y3 <- randomRIO (-300, 300)
+    x4 <- randomRIO (-300, 300)
+    y4 <- randomRIO (-300, 300)
+    x5 <- randomRIO (-300, 300)
+    y5 <- randomRIO (-300, 300)
+    x6 <- randomRIO (-300, 300)
+    y6 <- randomRIO (-300, 300)
 
--- Inicializa el estado del juego (posición de tanques, balas, etc.)
-inicializarMundo :: Mundo
-inicializarMundo =
-      addTanque ( 250,0) (\t -> t { cerebro = botSimple })
-    $ addTanque (-250,0) (\t -> t { cerebro = botFrancotirador })
-    $ addTanque (-100,100) (\t -> t { cerebro = botEvasivo })
-    $ addTanque (0, -250) (\t -> t { cerebro = botVueltas })
-    (mundoVacio tamanyoCampo)
+    let mundo =
+            addTanque (x1,y1) (\t -> t { cerebro = botSimple })
+          $ addTanque (x2,y2) (\t -> t { cerebro = botFrancotirador })
+          $ addTanque (x3,y3) (\t -> t { cerebro = botEvasivo })
+          $ addTanque (x4,y4) (\t -> t { cerebro = botVueltas })
+          $ addTanque (x5,y5) (\t -> t { cerebro = botRencoroso })   
+          $ addTanque (x6,y6) (\t -> t { cerebro = botCobarde })     
+              (mundoVacio tamanyoCampo)
+    return mundo
 
+-- =====================================================
+-- RENDERIZADO, EVENTOS Y ACTUALIZACIÓN
+-- =====================================================
 
--- RENDERIZADO DEL MUNDO --
+renderizar :: Recursos -> (Mundo, Recursos) -> Picture
+renderizar recursos (mundo, _) = dibujarMundo recursos mundo
 
--- Dibuja el estado actual del juego en pantalla.
--- Esta función llamará a las rutinas de Renderizado.hs para dibujar tanques, proyectiles, explosiones, barras de vida, etc.
-renderizar :: Mundo -> Picture
-renderizar mundo = 
-    dibujarMundo mundo
+manejarEvento :: Event -> (Mundo, Recursos) -> (Mundo, Recursos)
+manejarEvento (EventKey (MouseButton LeftButton) Down _ (x, y)) (m, r) =
+    (addTanque (x, y) (\t -> t { cerebro = botSimple }) m, r)
+manejarEvento _ s = s
 
+actualizar :: Float -> (Mundo, Recursos) -> (Mundo, Recursos)
+actualizar dt (m, r) = (updateMundo dt m, r)
 
--- MANEJO DE EVENTOS (teclado, ratón, etc.) --
-
--- Procesa los eventos de entrada del usuario. Por ahora al hacer click genera un tanque de tipo Simple.
-manejarEvento :: Event -> Mundo -> Mundo
-manejarEvento (EventKey (MouseButton LeftButton) Down _ (x, y)) m = addTanque (x, y) (\t -> t { cerebro = botSimple }) m
-manejarEvento _ mundo = mundo
-
-
--- ACTUALIZACIÓN DEL MUNDO (BUCLE PRINCIPAL) --
-
--- Esta función se llama en cada frame para avanzar la simulación del juego.
-actualizar :: Float -> Mundo -> Mundo
-actualizar = updateMundo
-
-
--- FUNCIÓN PRINCIPAL --
+-- =====================================================
+-- FUNCIÓN PRINCIPAL
+-- =====================================================
 
 main :: IO ()
 main = do
     putStrLn "Iniciando Torneo de Bots..."
+
+    -- Carga de imágenes (usa Juicy)
+    Just tanquePic    <- loadJuicyPNG "assets/tanque.png"
+    Just torretaPic   <- loadJuicyPNG "assets/torreta.png"
+    Just balaPic      <- loadJuicyPNG "assets/bala.png"
+    Just explosionPic <- loadJuicyPNG "assets/explosion.png"
+    Just fondoPic     <- loadJuicyPNG "assets/fondo.png"
+
+    let recursos = Recursos
+          { imgTanque     = tanquePic
+          , imgTorreta    = torretaPic
+          , imgBala       = balaPic
+          , imgExplosion  = explosionPic
+          , imgFondo      = fondoPic
+          }
+
+    mundoInicial <- inicializarMundo
+
     play
-        ventana           -- Configuración de la ventana
-        colorFondo        -- Color de fondo
-        fps               -- Fotogramas por segundo
-        inicializarMundo  -- Estado inicial del juego
-        renderizar        -- Función para dibujar el mundo
-        manejarEvento     -- Manejo de eventos (teclado, ratón)
-        actualizar        -- Función de actualización por frame
+      ventana
+      colorFondo
+      fps
+      (mundoInicial, recursos)
+      (renderizar recursos)
+      manejarEvento
+      actualizar

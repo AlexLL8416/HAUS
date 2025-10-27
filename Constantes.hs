@@ -23,3 +23,6 @@ factorFrenado = -1.5
 -- Velocidad de las balas al ser disparadas
 velBalaDisparada :: Fractional a => a
 velBalaDisparada = 300
+
+duracionExplosiones :: Fractional a => a
+duracionExplosiones = 0.5

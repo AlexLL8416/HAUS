@@ -57,3 +57,48 @@ botEvasivo = do
             if preparado then disparar else nada
         _ -> parar
     evitarParedes
+
+botRencoroso :: Accion ()
+botRencoroso = do
+    enems <- enemigos
+    case enems of
+        (enemigo:_) -> do
+            let pos = posicion enemigo
+            guardarDato "ultimaPos" pos
+            girarHacia pos
+            acelerar
+            preparado <- apuntarCanyonHacia pos
+            if preparado then disparar else nada
+        _ -> do
+            mPos <- recuperarDato "ultimaPos"
+            case mPos of
+                Just pos -> do
+                    girarHacia pos
+                    mantenerVelocidad 40
+                Nothing -> parar
+    evitarParedes
+
+botCobarde :: Accion ()
+botCobarde = do
+    yo <- miTanque
+    golpeado <- fuiGolpeado
+    if golpeado
+        then do
+            let pos = posicion yo
+            guardarDato "zonaPeligrosa" pos
+            girarHacia (addVV pos (0, 200))  -- se aleja
+            mantenerVelocidad 100
+        else do
+            zona <- recuperarDato "zonaPeligrosa"
+            case zona of
+                Just z -> girarHacia (addVV z (200, 0))
+                Nothing -> patrullar
+    evitarParedes
+
+patrullar :: Accion ()
+patrullar = do
+    t <- tiempo
+    yo <- miTanque
+    let ang = t `mod'` (2 * pi)
+    girarHacia (addVV (posicion yo) (cos ang, sin ang))
+    mantenerVelocidad 50

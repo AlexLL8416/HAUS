@@ -3,6 +3,7 @@ import Fisicas (Position,Vector,Angle,Distance, Size, Point)
 import Data.List (findIndex)
 import Utilidades (replaceItem)
 import Memoria (MemoriaFR, memoriaVacia)
+import Constantes (duracionExplosiones)
 
 
 -- La función de acción recibe el índice del tanque que actúa y el mundo actual.
@@ -114,9 +115,9 @@ addTanque pos f m =
             idObjeto = id,
             posicion = pos,
             velocidad = (0, 0),
-            tamanyo = (40, 40),
+            tamanyo = (42, 47),
             extra = f (InfoTanque {
-                nombre = "Tanque " ++ show (id),
+                nombre = "Nave " ++ show (id),
                 energia = 100,
                 radar = 300,
                 angulo = 0,
@@ -127,7 +128,7 @@ addTanque pos f m =
                 frenando = False,
                 memoria = memoriaVacia,
                 cerebro = do return (),
-                longitudCannon = 40,
+                longitudCannon = 10,
                 cadenciaDisparo = 0.8,
                 tiempoUltimoDisparo = 0
             })
@@ -169,5 +170,5 @@ addExplosion pos radioInicial = Objeto
     , posicion = pos
     , velocidad = (0,0)
     , tamanyo = (radioInicial*2, radioInicial*2)
-    , extra = InfoExplosion { radio = radioInicial, tiempoVida = 0.5 }  -- 0.5s por ejemplo
+    , extra = InfoExplosion { radio = radioInicial, tiempoVida = duracionExplosiones }  -- 0.5s por ejemplo
     }

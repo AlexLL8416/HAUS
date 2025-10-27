@@ -5,8 +5,8 @@ import Memoria
 import Logica
 import Data.List (sortOn)
 import Utilidades (replaceItem)
-import Debug.Trace (trace)
 import Constantes 
+import qualified Data.Map as M
 
 -- Definición de acciones que un bot puede tomar
 
@@ -67,9 +67,10 @@ apuntarCanyonHacia p = Accion $ \tidx m ->
         ang = angleToTarget posYo p
         (m', t') = modificarTanque tidx (fmap (\t -> t { quiereAnguloCannon = ang })) m
         a = anguloCannon (extra t')
-        cerca = abs (a - ang) < deg2rad 1 -- Se considera que el cañón está apuntando al objetivo hay menos de X grados de diferencia
+        cerca = abs (a - ang) < deg2rad 1 -- Se considera que el cañón está apuntando al objetivo si hay menos de X grados de diferencia
     in (cerca, m')
 
+-- Dispara una bala desde el extremo del cañón, respetando la cadencia de disparo
 disparar :: Accion ()
 disparar = Accion $ \tidx m ->
     let t = tanques m !! tidx
@@ -77,7 +78,7 @@ disparar = Accion $ \tidx m ->
         tj = tiempoJuego m
         m' = if tj - tiempoUltimoDisparo tx > (1 / cadenciaDisparo tx)
             then let (m'', _) = modificarTanque tidx (fmap (\t' -> t' { tiempoUltimoDisparo = tj })) m    -- Almacenamos el tiempo actual para limitar la cadencia de disparo
-                     posBala = addVV (posicion t) (mulVS (longitudCannon tx) (anguloV (anguloCannon tx))) -- Calculamos la posicion inicial de la bala, que será el extremo del cañón
+                     posBala = addVV (posicion t) (mulVS (longitudCannon tx) (anguloV (anguloCannon tx))) -- Calculamos la posición inicial de la bala, que será el extremo del cañón
                  in addBala posBala (mulVS velBalaDisparada (anguloV (anguloCannon tx))) 5 (idObjeto t) m''
             else m
     in ((), m')
@@ -93,7 +94,7 @@ enemigos = Accion $ \tidx m ->
 
 -- Devuelve los segundos transcurridos desde el comienzo del juego
 tiempo :: Accion Float
-tiempo = Accion $ \tidx m -> (tiempoJuego m, m)
+tiempo = Accion $ \_ m -> (tiempoJuego m, m)
 
 -- Lee la memoria del tanque y la devuelve
 leerMemoria :: Accion MemoriaFR
@@ -124,9 +125,37 @@ evitarParedes = do
     if estaDentro then nada -- Si el bot está dentro del campo (teniendo en cuenta los márgenes), no hacemos nada
     else do
         girarHacia (0, 0) -- En caso contrario, orientaremos el bot hacia el centro del campo para que se aleje de las paredes
-
-        -- El vector posición siempre apunta desdes el centro del campo hacia nuestra posición, por tanto el producto escalar entre este vector
-        -- y el vector al que estamos yendo será positivo si nos estamos alejando del centro del campo, y negativo en caso contrario.
         if dot (x, y) (anguloV (angulo (extra t))) > 0
         then mantenerVelocidad 40 -- Si nos estamos alejando del centro, reduciremos la velocidad para asegurarnos de que no nos salimos del campo y facilitar la maniobra.
         else nada
+
+-- Funciones auxiliares para usar la memoria del bot --
+
+-- Guarda un dato (por ejemplo una posición) en la memoria del tanque actual
+guardarDato :: String -> (Float, Float) -> Accion ()
+guardarDato clave valor = do
+    mem <- leerMemoria
+    let memNueva = M.insert clave (VFloatP valor) mem
+    guardarMemoria memNueva
+
+-- Recupera un dato previamente guardado en la memoria
+recuperarDato :: String -> Accion (Maybe (Float, Float))
+recuperarDato clave = do
+    mem <- leerMemoria
+    case M.lookup clave mem of
+        Just (VFloatP v) -> return (Just v)
+        _ -> return Nothing
+
+-- Comprueba si el tanque ha sido golpeado desde la última iteración
+fuiGolpeado :: Accion Bool
+fuiGolpeado = do
+    t <- miTanque
+    mem <- leerMemoria
+    let energiaAct = energia (extra t)
+        energiaPrev = case M.lookup "energiaPrev" mem of
+            Just (VFloat e) -> e
+            _ -> energiaAct
+        golpeado = energiaAct < energiaPrev
+        memNueva = M.insert "energiaPrev" (VFloat energiaAct) mem
+    guardarMemoria memNueva
+    return golpeado
